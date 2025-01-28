@@ -1,11 +1,25 @@
-import React, { useContext, useState } from "react";
+import React, { useContext, useState, useEffect } from "react";
 import { UserContext } from "../context/user.context";
 import axiosInstance from "../config/axios";
+import { useNavigate } from "react-router-dom";
 
 const Home = () => {
   const { user } = useContext(UserContext);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [projectName, setprojectName] = useState(null);
+  const [project, setproject] = useState([]);
+
+  const navigate = useNavigate();
+  useEffect(() => {
+    axiosInstance
+      .get("/projects/all")
+      .then((res) => {
+        setproject(res.data.projects);
+      })
+      .catch((err) => {
+        console.log(err.response.data);
+      });
+  }, []);
 
   function createProject(e) {
     e.preventDefault();
@@ -24,7 +38,7 @@ const Home = () => {
   }
   return (
     <main className="p-4">
-      <div className="projects">
+      <div className="projects flex flex-wrap gap-3">
         <button
           className="project p-4 border border-slate-300 rounded-md"
           onClick={() => setIsModalOpen(true)}
@@ -32,6 +46,19 @@ const Home = () => {
           <span className="mr-2"> New Project</span>
           <i className="ri-link"></i>
         </button>
+        {project.map((project) => (
+          <div
+            key={project._id}
+            className="project p-4 border border-slate-300 rounded-md cursor-pointer flex flex-col min-w-52 hover:bg-slate-200"
+            onClick={() => navigate(`/project`, { state: { project } })}
+          >
+            <h2 className="mr-2 font-semibold">{project.name}</h2>
+            <div className="flex gap-2">
+              <i className="ri-user-line"></i>
+              <p>Collaborators :</p> {project.users.length}
+            </div>
+          </div>
+        ))}
         {isModalOpen && (
           <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50">
             <div className="bg-white p-6 rounded-md shadow-md">
