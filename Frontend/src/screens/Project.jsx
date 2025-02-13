@@ -1,17 +1,25 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useContext } from "react";
 import { useLocation } from "react-router-dom";
 import axiosInstance from "../config/axios";
+import { UserContext } from "../context/user.context";
+import {
+  initializeSocket,
+  recieveMessage,
+  sendMessage,
+} from "../config/socket";
 
 const Project = () => {
   const [sidepanel, setsidepanel] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState([]);
   const [users, setusers] = useState([]);
+  const { user } = useContext(UserContext);
 
   const location = useLocation();
-  console.log(location.state);
 
   const [project, setproject] = useState(location.state.project);
+  const [message, setMessage] = useState("");
+  const messageBox = React.createRef();
 
   const handleUserClick = (userId) => {
     setSelectedUserId((prevSelectedUserId) => {
@@ -40,7 +48,22 @@ const Project = () => {
       });
   }
 
+  function send() {
+    console.log(user);
+    sendMessage("project-message", {
+      message,
+      sender: user._id,
+    });
+    setMessage("");
+  }
+
   useEffect(() => {
+    initializeSocket(project._id);
+
+    recieveMessage("project-message", (data) => {
+      console.log(data);
+    });
+
     axiosInstance
       .get(`/projects/get-project/${location.state.project._id}`)
       .then((res) => {
@@ -72,7 +95,10 @@ const Project = () => {
           </button>
         </header>
         <div className="conversation-area flex-grow flex flex-col">
-          <div className="p-1 message-box flex-grow flex flex-col gap-1">
+          <div
+            ref={messageBox}
+            className="p-1 message-box flex-grow flex flex-col gap-1"
+          >
             <div className=" message max-w-56 flex flex-col p-2 bg-slate-50 w-fit rounded-md">
               <small className="opacity-65 text-xs">example@gmail.com</small>
               <p className="text-sm">
@@ -87,11 +113,16 @@ const Project = () => {
 
           <div className="input-field w-full flex">
             <input
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
               className="p-2 px-4 flex-grow border-none outline-none "
               type="text"
               placeholder="Type a message"
             />
-            <button className=" px-5 bg-slate-200 hover:bg-slate-400">
+            <button
+              onClick={() => send()}
+              className=" px-5 bg-slate-200 hover:bg-slate-400"
+            >
               <i className="ri-send-plane-fill"></i>
             </button>
           </div>

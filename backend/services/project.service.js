@@ -24,6 +24,7 @@ export const getAllProject = async ({ userId }) => {
   let allProjects;
 
   allProjects = await Project.find({ users: userId });
+  console.log(allProjects);
 
   return allProjects;
 };
