@@ -1,7 +1,10 @@
-import React, { useEffect, useState, useContext } from "react";
+import React, { useEffect, useState, useContext, useRef } from "react";
 import { useLocation } from "react-router-dom";
 import axiosInstance from "../config/axios";
 import { UserContext } from "../context/user.context";
+import Markdown from "markdown-to-jsx";
+import hljs from "highlight.js";
+
 import {
   initializeSocket,
   recieveMessage,
@@ -19,7 +22,12 @@ const Project = () => {
 
   const [project, setproject] = useState(location.state.project);
   const [message, setMessage] = useState("");
-  const messageBox = React.createRef();
+  const [messages, setMessages] = useState([]);
+  const messageBox = useRef(null);
+  const [filetree, setfiletree] = useState({});
+  const [currentFile, setcurrentFile] = useState(null);
+
+  const [openFiles, setopenFiles] = useState([]);
 
   const handleUserClick = (userId) => {
     setSelectedUserId((prevSelectedUserId) => {
@@ -49,19 +57,36 @@ const Project = () => {
   }
 
   function send() {
-    console.log(user);
-    sendMessage("project-message", {
-      message,
-      sender: user._id,
-    });
+    const messageObject = { message, sender: user.email };
+    sendMessage("project-message", messageObject);
+    setMessages((prevMessages) => [...prevMessages, messageObject]);
     setMessage("");
+    scrollToBottom();
+  }
+
+  function writeAIResponse(message) {
+    const messageObject = JSON.parse(message);
+    return (
+      <div className="overflow-auto bg-slate-950 text-white p-2 rounded-md ">
+        <Markdown>{messageObject.text}</Markdown>
+      </div>
+    );
   }
 
   useEffect(() => {
     initializeSocket(project._id);
 
     recieveMessage("project-message", (data) => {
-      console.log(data);
+      const message = JSON.parse(data.message);
+
+      console.log(message);
+
+      if (message.fileTree) {
+        setfiletree(message.fileTree);
+      }
+
+      setMessages((prevMessages) => [...prevMessages, data]);
+      scrollToBottom();
     });
 
     axiosInstance
@@ -82,36 +107,46 @@ const Project = () => {
       });
   }, []);
 
+  function scrollToBottom() {
+    if (messageBox.current) {
+      messageBox.current.scrollTop = messageBox.current.scrollHeight;
+    }
+  }
+
   return (
     <main className="h-screen w-screen flex">
-      <section className="left relative flex flex-col h-full min-w-96 bg-slate-300">
-        <header className="flex justify-between items-center px-4 p-2 w-full bg-slate-200">
+      <section className="left relative flex flex-col h-screen min-w-96 bg-slate-300">
+        <header className="flex justify-between items-center px-4 p-2 w-full bg-slate-200 absolute">
           <button onClick={() => setIsModalOpen(true)} className="flex gap-2">
             <i className="ri-add-line mr-1"></i>
             <p>Add Collaborators</p>
           </button>
           <button onClick={() => setsidepanel(!sidepanel)} className="p-2">
-            <i className="ri-group-fill "></i>
+            <i className="ri-group-fill"></i>
           </button>
         </header>
-        <div className="conversation-area flex-grow flex flex-col">
+        <div className="conversation-area pt-14 pb-10 flex-grow flex flex-col relative overflow-hidden">
           <div
             ref={messageBox}
-            className="p-1 message-box flex-grow flex flex-col gap-1"
+            className="p-1 message-box flex-grow flex flex-col gap-1 overflow-y-auto max-h-full"
           >
-            <div className=" message max-w-56 flex flex-col p-2 bg-slate-50 w-fit rounded-md">
-              <small className="opacity-65 text-xs">example@gmail.com</small>
-              <p className="text-sm">
-                Lorem ipsum dolor sit amet. Lorem ipsum dolor sit amet
-              </p>
-            </div>
-            <div className=" message max-w-56 ml-auto flex flex-col p-2 bg-slate-50 w-fit rounded-md">
-              <small className="opacity-65 text-xs">example@gmail.com</small>
-              <p className="text-sm"> Lorem ipsum dolor sit amet.</p>
-            </div>
+            {messages.map((msg, index) => (
+              <div
+                key={index}
+                className={`message max-w-56 flex flex-col p-2 bg-slate-50 w-fit rounded-md ${
+                  msg.sender === user.email ? "ml-auto" : "max-w-80"
+                }`}
+              >
+                <small className="opacity-65 text-xs">{msg.sender}</small>
+                <p className="text-sm">
+                  {msg.sender == "AI"
+                    ? writeAIResponse(msg.message)
+                    : msg.message}
+                </p>
+              </div>
+            ))}
           </div>
-
-          <div className="input-field w-full flex">
+          <div className="input-field w-full flex absolute bottom-0 ">
             <input
               value={message}
               onChange={(e) => setMessage(e.target.value)}
@@ -156,7 +191,76 @@ const Project = () => {
           </div>
         </div>
       </section>
-
+      <section className="right flex-grow bg-red-50 h-full flex">
+        <div className="explorer h-full max-w-64 min-w-52 bg-slate-200">
+          <div className="file-tree w-full">
+            {Object.keys(filetree).map((file) => {
+              return (
+                <button
+                  onClick={() => {
+                    setcurrentFile(file);
+                    setopenFiles(Array.from(new Set([...openFiles, file])));
+                  }}
+                  key={file}
+                  className="tree-element cursor-pointer p-2 px-4 flex items-center gap-2 bg-slate-300 w-full"
+                >
+                  <p className=" font-semibold text-lg">{file}</p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        {currentFile && (
+          <div className="code-editor flex flex-col flex-grow h-full">
+            <div className="top flex">
+              {openFiles.map((file) => {
+                return (
+                  <button
+                    onClick={() => setcurrentFile(file)}
+                    key={file}
+                    className="p-2 px-4 flex flex-row items-center gap-2 bg-slate-300 w-fit"
+                  >
+                    <p className=" font-semibold text-lg">{file}</p>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="bottom flex flex-grow"></div>
+            {filetree[currentFile] && (
+              <div className="code-editor-area h-full overflow-auto flex-grow bg-slate-50">
+                <pre className="hljs h-full">
+                  <code
+                    className="hljs h-full outline-none"
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => {
+                      const updatedContent = e.target.innerText;
+                      setfiletree((prevFileTree) => ({
+                        ...prevFileTree,
+                        [currentFile]: {
+                          ...prevFileTree[currentFile],
+                          content: updatedContent,
+                        },
+                      }));
+                    }}
+                    dangerouslySetInnerHTML={{
+                      __html: hljs.highlight(
+                        "javascript",
+                        filetree[currentFile].file.contents
+                      ).value,
+                    }}
+                    style={{
+                      whiteSpace: "pre-wrap",
+                      paddingBottom: "25rem",
+                      counterSet: "line-numbering",
+                    }}
+                  />
+                </pre>
+              </div>
+            )}
+          </div>
+        )}
+      </section>
       {isModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
           <div className="bg-white p-4 rounded-md w-11/12 max-w-md relative">
