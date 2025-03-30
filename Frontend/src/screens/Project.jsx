@@ -4,14 +4,17 @@ import axiosInstance from "../config/axios";
 import { UserContext } from "../context/user.context";
 import Markdown from "markdown-to-jsx";
 import hljs from "highlight.js";
+import { getWebContainer } from "../config/webContainer";
 
 import {
   initializeSocket,
   recieveMessage,
   sendMessage,
 } from "../config/socket";
+import e from "cors";
 
 const Project = () => {
+  const [webContainer, setwebContainer] = useState(null);
   const [sidepanel, setsidepanel] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState([]);
@@ -28,6 +31,8 @@ const Project = () => {
   const [currentFile, setcurrentFile] = useState(null);
 
   const [openFiles, setopenFiles] = useState([]);
+  const [iframe, setiframe] = useState(null);
+  const [runProcess, setRunProcess] = useState(null);
 
   const handleUserClick = (userId) => {
     setSelectedUserId((prevSelectedUserId) => {
@@ -58,7 +63,7 @@ const Project = () => {
 
   function send() {
     const messageObject = { message, sender: user.email };
-    sendMessage("project-message", messageObject);
+    sendMessage("project-message", JSON.stringify(messageObject));
     setMessages((prevMessages) => [...prevMessages, messageObject]);
     setMessage("");
     scrollToBottom();
@@ -76,15 +81,34 @@ const Project = () => {
   useEffect(() => {
     initializeSocket(project._id);
 
+    if (!webContainer) {
+      getWebContainer().then((container) => {
+        setwebContainer(container);
+        console.log("container started");
+      });
+    }
+
     recieveMessage("project-message", (data) => {
-      const message = JSON.parse(data.message);
+      let messageObject;
 
-      console.log(message);
-
-      if (message.fileTree) {
-        setfiletree(message.fileTree);
+      try {
+        messageObject = JSON.parse(data.message);
+      } catch (error) {
+        console.warn("⚠️ Received non-JSON message:", error);
+        setMessages((prevMessages) => [...prevMessages, data]);
+        scrollToBottom();
+        return; // Exit early if JSON parsing fails
       }
 
+      webContainer?.mount(messageObject.fileTree);
+
+      if (messageObject.fileTree) {
+        console.log("🌳 FileTree found in messageObject!");
+        console.log(messageObject.fileTree);
+        setfiletree(messageObject.fileTree);
+      } else {
+        console.warn("⚠️ No fileTree found in messageObject!");
+      }
       setMessages((prevMessages) => [...prevMessages, data]);
       scrollToBottom();
     });
@@ -212,18 +236,66 @@ const Project = () => {
         </div>
         {currentFile && (
           <div className="code-editor flex flex-col flex-grow h-full">
-            <div className="top flex">
-              {openFiles.map((file) => {
-                return (
+            <div className="top flex justify-between w-full">
+              <div className="files flex">
+                {openFiles.map((file) => {
                   <button
                     onClick={() => setcurrentFile(file)}
                     key={file}
                     className="p-2 px-4 flex flex-row items-center gap-2 bg-slate-300 w-fit"
                   >
                     <p className=" font-semibold text-lg">{file}</p>
-                  </button>
-                );
-              })}
+                  </button>;
+                })}
+              </div>
+
+              <div className="action flex gap-2">
+                <button
+                  onClick={async () => {
+                    await webContainer.mount(filetree);
+
+                    const installProcess = await webContainer.spawn("npm", [
+                      "install",
+                    ]);
+                    installProcess.output.pipeTo(
+                      new WritableStream({
+                        write(chunk) {
+                          console.log(chunk);
+                        },
+                      })
+                    );
+
+                    if (runProcess) {
+                      runProcess.kill();
+                    }
+
+                    let tempRunProcess = await webContainer.spawn("npm", [
+                      "kill-port",
+                      "3000",
+                    ]);
+
+                    const runProcess = await webContainer.spawn("npm", [
+                      "start",
+                    ]);
+                    runProcess.output.pipeTo(
+                      new WritableStream({
+                        write(chunk) {
+                          console.log(chunk);
+                        },
+                      })
+                    );
+
+                    setRunProcess(tempRunProcess);
+
+                    webContainer.on("server-ready", (port, url) => {
+                      console.log(port, url);
+                      setiframe(url);
+                    });
+                  }}
+                >
+                  run
+                </button>
+              </div>
             </div>
             <div className="bottom flex flex-grow"></div>
             {filetree[currentFile] && (
@@ -239,7 +311,10 @@ const Project = () => {
                         ...prevFileTree,
                         [currentFile]: {
                           ...prevFileTree[currentFile],
-                          content: updatedContent,
+                          file: {
+                            ...prevFileTree[currentFile].file,
+                            contents: updatedContent,
+                          },
                         },
                       }));
                     }}
@@ -258,6 +333,19 @@ const Project = () => {
                 </pre>
               </div>
             )}
+          </div>
+        )}
+        {iframe && webContainer && (
+          <div className="flex flex-col h-full min-w-96">
+            <div className="addressBa">
+              <input
+                className="p-2 px-4 flex-grow border-none outline-none"
+                type="text"
+                value={iframe}
+                onChange={(e) => setiframe(e.target.value)}
+              />
+            </div>
+            <iframe src={iframe} className="h-full w-full"></iframe>
           </div>
         )}
       </section>
