@@ -140,12 +140,15 @@ const Project = () => {
   return (
     <main className="h-screen w-screen flex">
       <section className="left relative flex flex-col h-screen min-w-96 bg-slate-300">
-        <header className="flex justify-between items-center px-4 p-2 w-full bg-slate-200 absolute">
-          <button onClick={() => setIsModalOpen(true)} className="flex gap-2">
+        <header className="flex justify-between items-center px-4 p-2 w-full bg-slate-200 z-10 relative">
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="flex gap-2 z-20"
+          >
             <i className="ri-add-line mr-1"></i>
             <p>Add Collaborators</p>
           </button>
-          <button onClick={() => setsidepanel(!sidepanel)} className="p-2">
+          <button onClick={() => setsidepanel(!sidepanel)} className="p-2 z-20">
             <i className="ri-group-fill"></i>
           </button>
         </header>
@@ -252,45 +255,50 @@ const Project = () => {
               <div className="action flex gap-2">
                 <button
                   onClick={async () => {
-                    await webContainer.mount(filetree);
+                    try {
+                      // Mount the file tree to the web container
+                      await webContainer.mount(filetree);
 
-                    const installProcess = await webContainer.spawn("npm", [
-                      "install",
-                    ]);
-                    installProcess.output.pipeTo(
-                      new WritableStream({
-                        write(chunk) {
-                          console.log(chunk);
-                        },
-                      })
-                    );
+                      // Install dependencies
+                      const installProcess = await webContainer.spawn("npm", [
+                        "install",
+                      ]);
+                      installProcess.output.pipeTo(
+                        new WritableStream({
+                          write(chunk) {
+                            console.log(chunk);
+                          },
+                        })
+                      );
 
-                    if (runProcess) {
-                      runProcess.kill();
+                      // Kill any existing process if running
+                      if (runProcess) {
+                        runProcess.kill();
+                      }
+
+                      // Start the application
+                      const tempRunProcess = await webContainer.spawn("npm", [
+                        "start",
+                      ]);
+                      tempRunProcess.output.pipeTo(
+                        new WritableStream({
+                          write(chunk) {
+                            console.log(chunk);
+                          },
+                        })
+                      );
+
+                      // Set the new process to state
+                      setRunProcess(tempRunProcess);
+
+                      // Listen for the server-ready event
+                      webContainer.on("server-ready", (port, url) => {
+                        console.log(port, url);
+                        setiframe(url); // Set the iframe URL to display the running app
+                      });
+                    } catch (error) {
+                      console.error("Error while running the process:", error);
                     }
-
-                    let tempRunProcess = await webContainer.spawn("npm", [
-                      "kill-port",
-                      "3000",
-                    ]);
-
-                    const runProcess = await webContainer.spawn("npm", [
-                      "start",
-                    ]);
-                    runProcess.output.pipeTo(
-                      new WritableStream({
-                        write(chunk) {
-                          console.log(chunk);
-                        },
-                      })
-                    );
-
-                    setRunProcess(tempRunProcess);
-
-                    webContainer.on("server-ready", (port, url) => {
-                      console.log(port, url);
-                      setiframe(url);
-                    });
                   }}
                 >
                   run
